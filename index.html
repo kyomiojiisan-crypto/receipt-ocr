@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ja"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>レシート読み取り・修理伺い（試作）</title>
+<style>
+body{font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;margin:0;background:#f4f5f7;color:#222}
+header{background:#2b6cb0;color:#fff;padding:10px 14px;font-weight:bold}
+.tabs{display:flex;background:#fff;border-bottom:1px solid #ddd;position:sticky;top:0;z-index:5}
+.tabs button{flex:1;padding:12px 4px;border:0;background:none;font-size:15px}
+.tabs button.on{border-bottom:3px solid #2b6cb0;font-weight:bold;color:#2b6cb0}
+section{padding:12px;display:none}section.on{display:block}
+.card{background:#fff;border-radius:10px;padding:12px;margin-bottom:12px;box-shadow:0 1px 2px #0001}
+.big{display:block;width:100%;padding:14px;font-size:17px;border-radius:10px;border:0;background:#2b6cb0;color:#fff;margin:6px 0}
+.sub{background:#e2e8f0;color:#222}
+label{display:block;font-size:13px;color:#555;margin-top:8px}
+input,textarea,select{width:100%;box-sizing:border-box;font-size:16px;padding:8px;border:1px solid #ccc;border-radius:6px}
+canvas,img.prev{max-width:100%;border-radius:6px}
+pre{white-space:pre-wrap;font-size:13px;background:#f7f7f7;padding:8px;border-radius:6px;max-height:240px;overflow:auto}
+.chip{display:inline-block;padding:6px 10px;margin:3px;border-radius:16px;background:#edf2f7;border:1px solid #cbd5e0;font-size:14px}
+.chip.best{background:#c6f6d5;border-color:#38a169}
+.chip.name{background:#fefcbf;border-color:#d69e2e}.chip.opt{opacity:.6;border-style:dashed}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.muted{color:#777;font-size:12px}
+.entry{display:flex;gap:8px;align-items:center;border-bottom:1px solid #eee;padding:8px 0}
+.entry img{width:56px;height:56px;object-fit:cover;border-radius:4px}
+.entry .x{flex:0 0 auto;background:#fed7d7;border:0;border-radius:6px;padding:6px 8px}
+progress{width:100%}
+video{width:100%;border-radius:6px;display:none}
+</style></head><body>
+<header>レシート読み取り・修理伺い（試作）</header>
+<div class="tabs"><button data-t="scan" class="on">① 読み取り</button><button data-t="form">② 修理伺い</button><button data-t="list">③ 一覧・CSV</button></div>
+
+<section id="scan" class="on">
+ <div class="card">
+  <div class="row"><label style="margin:0">モード<select id="mode"><option value="receipt">レシート（金額）</option><option value="menu">献立・メニュー（材料）</option></select></label></div>
+  <label class="big" style="text-align:center;cursor:pointer">📷 撮影 / 写真を選ぶ<input id="file" type="file" accept="image/*" capture="environment" style="display:none"></label>
+  <button id="liveBtn" class="big sub">ライブカメラ（HTTPSのとき）</button>
+  <video id="video" playsinline muted></video>
+  <button id="snapBtn" class="big" style="display:none">この画面で撮る</button>
+  <label><input id="pre" type="checkbox" checked style="width:auto"> 前処理（白黒・コントラスト強調）</label>
+  <canvas id="cv"></canvas>
+  <progress id="prog" value="0" max="1" style="display:none"></progress>
+  <div id="status" class="muted"></div>
+ </div>
+ <div class="card" id="resultReceipt" style="display:none">
+  <b>金額の候補</b> <span class="muted">（タップで選ぶ。緑が第一候補）</span>
+  <div id="amounts"></div>
+  <div class="row"><div><label>日付</label><input id="rDate"></div><div><label>店名</label><input id="rStore"></div></div>
+  <button id="toForm" class="big">この内容で修理伺いへ →</button>
+ </div>
+ <div class="card" id="resultMenu" style="display:none">
+  <b>料理と材料</b>
+  <div class="muted">黄色＝料理名から直接　灰色＝辞書の定番　点線＝入ることが多い候補（タップで外す/戻す）</div>
+  <div id="dishes"></div>
+  <label>料理名を手で追加・修正（1行1品）</label><textarea id="dishInput" rows="3" placeholder="例：卵の味噌汁"></textarea>
+  <button id="dishRe" class="big sub">この料理名で材料を出し直す</button>
+  <label>材料まとめ（編集可）</label><textarea id="ingSum" rows="3"></textarea>
+ </div>
+ <div class="card"><b>読み取った文字</b> <span id="conf" class="muted"></span><pre id="raw"></pre>
+  <div class="muted">文字を直して下のボタンで再抽出できます（認識精度の確認用）。</div>
+  <button id="reExtract" class="big sub">この文字で再抽出</button></div>
+</section>
+
+<section id="form">
+ <div class="card">
+  <label>件名（修理内容）</label><input id="fTitle" placeholder="例：2階トイレ 手すりのネジ交換">
+  <div class="row"><div><label>日付</label><input id="fDate" type="date"></div><div><label>金額（円）</label><input id="fAmount" inputmode="numeric"></div></div>
+  <label>店名</label><input id="fStore">
+  <label>メモ</label><textarea id="fMemo" rows="2"></textarea>
+  <label>レシート</label><img id="fThumb" class="prev" style="max-height:160px">
+  <button id="save" class="big">保存</button>
+  <div class="muted">保存先はこのスマホのブラウザ内（localStorage）だけです。</div>
+ </div>
+</section>
+
+<section id="list">
+ <div class="card"><div id="entries"></div><div id="total" style="margin-top:8px;font-weight:bold"></div>
+ <button id="csv" class="big">CSVで書き出す（Excel用）</button></div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="extract.js"></script><script src="menu.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+let thumb='', lastImg=null, worker=null;
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
+function show(t){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===t));if(t==='list')renderList();}
+
+async function getWorker(){
+  if(worker) return worker;
+  $('status').textContent='OCRエンジン準備中（初回は日本語データ約十数MBを読み込みます）…';
+  worker = await Tesseract.createWorker(['jpn','eng'],1,{logger:m=>{if(m.progress!=null){$('prog').style.display='';$('prog').value=m.progress;}$('status').textContent=({'recognizing text':'文字認識中','loading language traineddata':'日本語データ読込中','initializing api':'初期化中'}[m.status]||m.status)+' '+Math.round((m.progress||0)*100)+'%';}});
+  return worker;
+}
+function drawToCanvas(img){
+  const cv=$('cv'),max=1800,min=1200;
+  let w=img.naturalWidth||img.videoWidth||img.width,h=img.naturalHeight||img.videoHeight||img.height;
+  let s=Math.min(1,max/Math.max(w,h)); if(Math.max(w,h)<min) s=min/Math.max(w,h);
+  cv.width=Math.round(w*s);cv.height=Math.round(h*s);
+  const c=cv.getContext('2d');c.drawImage(img,0,0,cv.width,cv.height);
+  // thumbnail
+  const t=document.createElement('canvas');const ts=240/Math.max(w,h);t.width=w*ts;t.height=h*ts;t.getContext('2d').drawImage(img,0,0,t.width,t.height);thumb=t.toDataURL('image/jpeg',0.6);
+  if($('pre').checked){
+    const d=c.getImageData(0,0,cv.width,cv.height),p=d.data;let sum=0,n=p.length/4;
+    const g=new Uint8ClampedArray(n);
+    for(let i=0;i<n;i++){g[i]=0.299*p[i*4]+0.587*p[i*4+1]+0.114*p[i*4+2];sum+=g[i];}
+    // contrast stretch by percentiles
+    const hist=new Array(256).fill(0);g.forEach(v=>hist[v|0]++);
+    let lo=0,hi=255,acc=0;for(;lo<255;lo++){acc+=hist[lo];if(acc>n*0.02)break;}acc=0;for(;hi>0;hi--){acc+=hist[hi];if(acc>n*0.02)break;}
+    const r=Math.max(1,hi-lo);
+    for(let i=0;i<n;i++){const v=Math.max(0,Math.min(255,(g[i]-lo)*255/r));p[i*4]=p[i*4+1]=p[i*4+2]=v;}
+    c.putImageData(d,0,0);
+  }
+}
+async function runOCR(img){
+  lastImg=img;drawToCanvas(img);
+  const w=await getWorker();
+  const t0=Date.now();
+  const {data}=await w.recognize($('cv'));
+  $('prog').style.display='none';
+  $('status').textContent=`認識完了（${((Date.now()-t0)/1000).toFixed(1)}秒）`;
+  $('raw').textContent=data.text;
+  $('conf').textContent=`信頼度 ${Math.round(data.confidence)} / 100`;
+  extract(data.text);
+}
+function extract(text){
+  if($('mode').value==='menu') return extractMenu(text);
+  $('resultMenu').style.display='none';$('resultReceipt').style.display='';
+  const r=ReceiptExtract.extractAll(text);
+  $('rDate').value=r.date;$('rStore').value=r.store;
+  $('amounts').innerHTML='';
+  if(!r.amounts.length) $('amounts').innerHTML='<div class="muted">金額が見つかりません。②で手入力してください。</div>';
+  r.amounts.forEach((a,i)=>{const b=document.createElement('button');b.className='chip'+(i===0?' best':'');b.innerHTML=`¥${a.value.toLocaleString()} <span class="muted">${a.reason}</span>`;b.title=a.line;
+    b.onclick=()=>{document.querySelectorAll('#amounts .chip').forEach(x=>x.classList.remove('best'));b.classList.add('best');$('fAmount').value=a.value;};$('amounts').appendChild(b);});
+  $('fAmount').value=r.amount??'';
+}
+let menuState=[];
+function extractMenu(text){
+  $('resultReceipt').style.display='none';$('resultMenu').style.display='';
+  menuState=MenuInfer.findDishes(text).map(d=>({...d,off:{}}));
+  $('dishInput').value=menuState.map(d=>d.dish).join('\n');renderMenu();
+}
+function renderMenu(){
+  const box=$('dishes');box.innerHTML='';
+  if(!menuState.length) box.innerHTML='<div class="muted">料理名が見つかりません。下に手で入力してください。</div>';
+  const all=new Set();
+  menuState.forEach(d=>{const div=document.createElement('div');div.style.margin='8px 0';div.innerHTML=`<b>${d.dish}</b> <span class="muted">${d.matched?'辞書:'+d.matched:'辞書なし（名前から推定）'}</span><br>`;
+    [['fromName','name'],['typical',''],['optional','opt']].forEach(([k,cls])=>d[k].forEach(x=>{const b=document.createElement('button');b.className='chip '+cls;const off=d.off[x]??(k==='optional');b.style.textDecoration=off?'line-through':'';b.style.opacity=off?.4:1;b.textContent=x;b.onclick=()=>{d.off[x]=!off;renderMenu();};div.appendChild(b);if(!off)all.add(x);}));
+    box.appendChild(div);});
+  $('ingSum').value=[...all].join('、');
+}
+$('dishRe').onclick=()=>{menuState=$('dishInput').value.split('\n').map(s=>s.trim()).filter(Boolean).map(s=>({...MenuInfer.analyzeDish(s),off:{}}));renderMenu();};
+$('mode').onchange=()=>{if($('raw').textContent)extract($('raw').textContent);};
+$('reExtract').onclick=()=>extract($('raw').textContent);
+$('raw').contentEditable=true;
+$('file').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Image();img.onload=()=>runOCR(img).catch(err=>$('status').textContent='エラー: '+err);img.src=URL.createObjectURL(f);};
+$('pre').onchange=()=>{if(lastImg)runOCR(lastImg);};
+$('liveBtn').onclick=async()=>{
+  if(!navigator.mediaDevices||!window.isSecureContext){alert('ライブカメラはHTTPSのページでのみ使えます。上の「撮影」ボタンを使ってください。');return;}
+  try{const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920}}});const v=$('video');v.srcObject=s;v.style.display='block';$('snapBtn').style.display='block';await v.play();}catch(e){alert('カメラを開けません: '+e.message);}
+};
+$('snapBtn').onclick=()=>{const v=$('video');const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);const img=new Image();img.onload=()=>runOCR(img);img.src=c.toDataURL('image/jpeg',0.92);v.srcObject.getTracks().forEach(t=>t.stop());v.style.display='none';$('snapBtn').style.display='none';};
+$('toForm').onclick=()=>{$('fDate').value=$('rDate').value;$('fStore').value=$('rStore').value;$('fThumb').src=thumb;show('form');};
+const load=()=>JSON.parse(localStorage.getItem('shuriEntries')||'[]');
+$('save').onclick=()=>{
+  const e={id:Date.now(),title:$('fTitle').value.trim(),date:$('fDate').value,store:$('fStore').value.trim(),amount:parseInt(String($('fAmount').value).replace(/[^\d]/g,''))||0,memo:$('fMemo').value.trim(),thumb:$('fThumb').getAttribute('src')||'',created:new Date().toISOString()};
+  if(!e.title){alert('件名を入れてください');return;}
+  const l=load();l.unshift(e);try{localStorage.setItem('shuriEntries',JSON.stringify(l));}catch(err){e.thumb='';l[0]=e;localStorage.setItem('shuriEntries',JSON.stringify(l));alert('容量不足のため画像なしで保存しました');}
+  ['fTitle','fMemo','fAmount','fStore'].forEach(i=>$(i).value='');$('fThumb').removeAttribute('src');show('list');
+};
+function renderList(){
+  const l=load();$('entries').innerHTML=l.length?'':'<div class="muted">まだありません</div>';
+  l.forEach(e=>{const d=document.createElement('div');d.className='entry';d.innerHTML=`${e.thumb?`<img src="${e.thumb}">`:''}<div style="flex:1"><b></b><br><span class="muted"></span></div><div>¥${e.amount.toLocaleString()}</div>`;
+    d.querySelector('b').textContent=e.title;d.querySelector('.muted').textContent=`${e.date} ${e.store} ${e.memo}`;
+    const x=document.createElement('button');x.className='x';x.textContent='削除';x.onclick=()=>{if(confirm('削除しますか？')){localStorage.setItem('shuriEntries',JSON.stringify(load().filter(y=>y.id!==e.id)));renderList();}};d.appendChild(x);$('entries').appendChild(d);});
+  $('total').textContent=l.length?`合計 ¥${l.reduce((s,e)=>s+e.amount,0).toLocaleString()}（${l.length}件）`:'';
+}
+$('csv').onclick=()=>{
+  const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  const rows=[['日付','件名（修理内容）','店名','金額','メモ','登録日時']].concat(load().map(e=>[e.date,e.title,e.store,e.amount,e.memo,e.created]));
+  const blob=new Blob(['\uFEFF'+rows.map(r=>r.map(q).join(',')).join('\r\n')],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='修理伺い_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+};
+$('fDate').value=new Date().toISOString().slice(0,10);
+</script></body></html>
