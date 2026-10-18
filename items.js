@@ -105,6 +105,51 @@
     it.lastUsed = now(); if (aliasId) { const a = it.aliases.find(x => x.id === aliasId); if (a) a.lastUsed = now(); }
   }
 
+
+  // ---- 仮登録 (provisional; separate key; expires after 24h; never applied silently) ----
+  const PROV_KEY = 'itemProvisional';
+  const PROV_TTL = 24 * 3600 * 1000;
+  function loadProv(storage) {
+    try { const l = JSON.parse(storage.getItem(PROV_KEY) || '[]'); return Array.isArray(l) ? l.filter(x => x && x.name) : []; } catch (e) { return []; }
+  }
+  function saveProv(storage, list) { storage.setItem(PROV_KEY, JSON.stringify(list)); }
+  function addProvisional(list, { mode, ocr, name, price }) {
+    name = String(name || '').trim(); ocr = String(ocr || '').trim(); if (!name) return null;
+    mode = mode === 'menu' ? 'menu' : 'receipt';
+    const p = price === '' || price == null ? null : (parseInt(price, 10) || null);
+    let e = list.find(x => x.mode === mode && norm(x.ocr) === norm(ocr) && norm(x.name) === norm(name));
+    if (e) { if (p) e.price = p; return e; }
+    e = { id: uid('p'), mode, ocr, name, price: p, createdAt: now() };
+    list.push(e); return e;
+  }
+  function remainingMs(e, t = now()) { return (e.createdAt || 0) + PROV_TTL - t; }
+  function purgeExpired(list, t = now()) {
+    const keep = list.filter(e => remainingMs(e, t) > 0);
+    const removed = list.length - keep.length; list.length = 0; keep.forEach(e => list.push(e)); return removed;
+  }
+  function confirmProvisional(m, list, id, edits = {}) {
+    const i = list.findIndex(x => x.id === id); if (i < 0) return null;
+    const e = { ...list[i], ...edits };
+    const it = registerCorrection(m, e.mode, e.ocr, e.name, { price: e.price });
+    if (it) list.splice(i, 1);
+    return it;
+  }
+  function discardProvisional(list, id) { const i = list.findIndex(x => x.id === id); if (i < 0) return false; list.splice(i, 1); return true; }
+  // suggestion only: best provisional entry for an OCR name (same scoring as matchName)
+  function matchProvisional(list, mode, raw) {
+    const n = norm(raw); if (n.length < 2) return null; let best = null;
+    for (const e of list) {
+      if (e.mode !== mode) continue;
+      for (const txt of [e.ocr, e.name]) {
+        const cn = norm(txt); if (!cn) continue; let score = 0;
+        if (cn === n) score = 1; else if (cn.length >= 4 && n.includes(cn)) score = 0.95;
+        else { const sm = similarity(n, cn); if (sm >= threshold(Math.min(n.length, cn.length))) score = sm * 0.9; }
+        if (score && (!best || score > best.score)) best = { entry: e, score };
+      }
+    }
+    return best;
+  }
+
   // ---- correction of OCR text ----
   const SKIP_LINE = /(合\s*計|小\s*計|総\s*計|お?預|お?釣|消費税|TEL|電話|領収|ありがとう|ポイント|\d{4}\s*[年/.\-]\s*\d)/i;
   function splitLine(line, mode) {
@@ -222,7 +267,7 @@
     return st;
   }
 
-  const api = { KEY, norm, lev, similarity, collapseCJK, empty, sanitize, load, save, findByName, addItem, addAlias, registerCorrection,
+  const api = { PROV_KEY, PROV_TTL, loadProv, saveProv, addProvisional, remainingMs, purgeExpired, confirmProvisional, discardProvisional, matchProvisional, KEY, norm, lev, similarity, collapseCJK, empty, sanitize, load, save, findByName, addItem, addAlias, registerCorrection,
     deleteItem, deleteAlias, staleItems, lastActivity, touch, matchName, applyCorrections, extractLineItems, exportJSON, importJSON };
   if (typeof module !== 'undefined') module.exports = api; else root.ItemMaster = api;
 })(this);

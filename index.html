@@ -34,7 +34,9 @@ pre{white-space:pre-wrap;font-size:13px;background:#f7f7f7;padding:8px;border-ra
 .li{border-bottom:1px solid #eee;padding:8px 0}
 .li .price{flex:0 0 90px}
 .badge{display:inline-block;font-size:11px;padding:2px 6px;border-radius:8px;background:#edf2f7;margin-left:4px}
-.badge.ok{background:#c6f6d5}.badge.fix{background:#bee3f8}.badge.new{background:#feebc8}
+.badge.ok{background:#c6f6d5}.badge.prov{background:#fbd38d}.tabs .cnt{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:#e53e3e;color:#fff;font-size:12px;margin-left:2px}
+.prov{border:1px solid #f6ad55;background:#fffaf0;border-radius:8px;padding:8px;margin:6px 0}.provCard{border:2px solid #f6ad55}
+.sugg{background:#fffaf0;border:1px dashed #dd6b20;color:#9c4221}.badge.fix{background:#bee3f8}.badge.new{background:#feebc8}
 .applied li{font-size:13px;margin:2px 0}
 .item{border:1px solid #e2e8f0;border-radius:8px;padding:8px;margin:8px 0}
 .alias{display:inline-block;background:#edf2f7;border-radius:12px;padding:3px 4px 3px 10px;margin:3px;font-size:13px}
@@ -43,7 +45,7 @@ progress{width:100%}
 video{width:100%;border-radius:6px;display:none}
 </style></head><body><main>
 <header>レシート読み取り・修理伺い（試作）</header>
-<div class="tabs"><button data-t="scan" class="on">① 読取</button><button data-t="form">② 修理伺い</button><button data-t="list">③ 一覧</button><button data-t="items">④ 品目登録</button></div>
+<div class="tabs"><button data-t="scan" class="on">① 読取</button><button data-t="form">② 修理伺い</button><button data-t="list">③ 一覧</button><button data-t="items">④ 品目登録<span id="provBadge" class="cnt" style="display:none"></span></button></div>
 
 <section id="scan" class="on">
  <div class="card">
@@ -61,11 +63,15 @@ video{width:100%;border-radius:6px;display:none}
   <b>登録済みの品目で自動修正</b> <span id="appliedCount" class="muted"></span>
   <ul id="applied" class="applied"></ul>
  </div>
+ <div class="card provCard" id="provScanCard" style="display:none">
+  <b>仮登録（未確定）</b> <span class="muted">確定するまで自動修正には使いません。24時間で自動的に消えます。</span>
+  <div id="provListScan"></div>
+ </div>
  <div class="card" id="resultReceipt" style="display:none">
   <b>金額の候補</b> <span class="muted">（タップで選ぶ。緑が第一候補）</span>
   <div id="amounts"></div>
   <div class="row"><div><label>日付</label><input id="rDate"></div><div><label>店名</label><input id="rStore"></div></div>
-  <div style="margin-top:12px"><b>品目（明細）</b> <span class="muted">名前を直して「登録」すると、次から自動で直ります。チェックした行を修理伺いに入れます。</span></div>
+  <div style="margin-top:12px"><b>品目（明細）</b> <span class="muted">名前を直して「仮登録」→ ④で「確定」すると、次から自動で直ります。チェックした行を修理伺いに入れます。</span></div>
   <div id="lineItems"></div>
   <button id="addLine" class="btn" style="margin-top:6px">＋ 行を追加</button>
   <button id="toForm" class="big">この内容で修理伺いへ →</button>
@@ -104,6 +110,12 @@ video{width:100%;border-radius:6px;display:none}
 </section>
 
 <section id="items">
+ <div class="card provCard" id="provItemsCard">
+  <b>仮登録（未確定）</b> <span id="provCount" class="muted"></span>
+  <div class="muted">読み取り画面から仮登録したものです。名前を確かめて「確定」すると品目に入ります。確定しないものは24時間で自動的に消えます。仮登録は品目ファイル（JSON）には含まれません。</div>
+  <div class="row" style="margin-top:6px"><label style="margin:0;flex:0 0 auto"><input type="checkbox" id="provAll"> 全部選ぶ</label><button id="provOkSel" class="btn pri">選んだものを確定</button><button id="provDelSel" class="btn del">選んだものを破棄</button></div>
+  <div id="provListItems"></div>
+ </div>
  <div class="card">
   <div class="row"><label style="margin:0">種類<select id="imMode"><option value="receipt">レシートの品目</option><option value="menu">献立の料理</option></select></label>
    <label style="margin:0">検索<input id="imSearch" placeholder="名前・別名"></label></div>
@@ -138,6 +150,8 @@ video{width:100%;border-radius:6px;display:none}
 const $=id=>document.getElementById(id);
 const IM=ItemMaster;
 let master=IM.load(localStorage);
+let prov=IM.loadProv(localStorage);const provSel=new Set();
+const saveProv=()=>{IM.saveProv(localStorage,prov);renderProvAll();};
 const saveMaster=()=>{IM.save(localStorage,master);refreshDatalists();};
 function el(tag,props={},kids=[]){const e=document.createElement(tag);for(const[k,v]of Object.entries(props)){if(k==='on')for(const[ev,f]of Object.entries(v))e.addEventListener(ev,f);else if(k in e)e[k]=v;else e.setAttribute(k,v);}(Array.isArray(kids)?kids:[kids]).forEach(c=>c!=null&&e.append(c));return e;}
 const yen=v=>v==null||v===''||isNaN(v)?'':'¥'+Number(v).toLocaleString();
@@ -207,7 +221,13 @@ function extractReceipt(text){
   lineRows=IM.extractLineItems(text).map(li=>{const ap=lastApplied.find(a=>a.line===li.line);return{ocr:ap?ap.from:li.ocr,name:li.name,price:li.price,use:true,fixed:!!ap};});
   renderLines();
 }
-function rowStatus(row,mode){const it=IM.findByName(master,mode,row.name);if(!it)return['new','未登録'];if(row.fixed)return['fix','自動修正'];return['ok','登録済み'];}
+function rowStatus(row,mode){const it=IM.findByName(master,mode,row.name);if(!it){if(prov.some(e=>e.mode===mode&&IM.norm(e.name)===IM.norm(row.name)))return['prov','仮登録中'];return['new','未登録'];}if(row.fixed)return['fix','自動修正'];return['ok','登録済み'];}
+// 仮登録は自動では当てはめず、「仮」の候補ボタンとして出す
+function suggBtn(ocr,current,mode,apply){
+  if(IM.findByName(master,mode,current))return null;
+  const h=IM.matchProvisional(prov,mode,ocr);if(!h||IM.norm(h.entry.name)===IM.norm(current))return null;
+  return el('button',{className:'btn sugg',style:'margin-left:6px;padding:3px 8px;font-size:12px',textContent:`仮：${h.entry.name} にする`,title:'仮登録の候補（未確定）',on:{click:()=>apply(h.entry.name)}});
+}
 function renderLines(){
   const box=$('lineItems');box.innerHTML='';
   if(!lineRows.length)box.append(el('div',{className:'muted',textContent:'明細行が見つかりません。「＋ 行を追加」で入力できます。'}));
@@ -217,14 +237,14 @@ function renderLines(){
     const name=el('input',{value:row.name,placeholder:'品目名',on:{input:e=>{row.name=e.target.value;row.fixed=false;},change:e=>{const it=IM.findByName(master,'receipt',e.target.value);if(it){if(!row.price&&it.price){row.price=it.price;price.value=it.price;}IM.touch(master,it.id);saveMaster();}const[c2,t2]=rowStatus(row,'receipt');badge.className='badge '+c2;badge.textContent=t2;}}});
     name.setAttribute('list','dl-receipt');
     const price=el('input',{className:'price',value:row.price??'',inputmode:'numeric',placeholder:'円',on:{input:e=>row.price=parseInt(e.target.value.replace(/\D/g,''))||null}});
-    const reg=el('button',{className:'btn pri',textContent:'登録',title:'この修正を品目として登録',on:{click:()=>{
+    const reg=el('button',{className:'btn pri',textContent:'仮登録',title:'この修正を仮登録（④で確定）',on:{click:()=>{
       if(!row.name.trim())return alert('品目名を入れてください');
-      IM.registerCorrection(master,'receipt',row.ocr,row.name,{price:row.price});saveMaster();
-      $('status').textContent=`登録しました：「${row.ocr}」→「${row.name.trim()}」`;renderLines();}}});
+      prov=IM.loadProv(localStorage);IM.addProvisional(prov,{mode:'receipt',ocr:row.ocr||row.name,name:row.name,price:row.price});saveProv();
+      $('status').textContent=`仮登録しました：「${row.ocr||row.name}」→「${row.name.trim()}」（④品目登録で確定してください）`;renderLines();}}});
     const del=el('button',{className:'btn del',textContent:'×',title:'この行を消す',on:{click:()=>{lineRows.splice(i,1);renderLines();}}});
     box.append(el('div',{className:'li'},[
       el('div',{className:'row'},[el('input',{type:'checkbox',checked:row.use,title:'修理伺いに入れる',on:{change:e=>row.use=e.target.checked}}),name,price,reg,del]),
-      el('div',{className:'muted'},[row.ocr&&row.ocr!==row.name?`OCR：${row.ocr}`:'',badge])]));
+      el('div',{className:'muted'},[row.ocr&&row.ocr!==row.name?`OCR：${row.ocr}`:'',badge,suggBtn(row.ocr||row.name,row.name,'receipt',v=>{row.name=v;const e=prov.find(x=>x.mode==='receipt'&&x.name===v);if(e&&!row.price&&e.price)row.price=e.price;renderLines();})])]));
   });
 }
 $('addLine').onclick=()=>{lineRows.push({ocr:'',name:'',price:null,use:true});renderLines();};
@@ -252,10 +272,10 @@ function renderMenu(){
     const[cls,txt]=rowStatus({name:d.dish,fixed:d.fixed},'menu');
     const inp=el('input',{value:d.dish,on:{change:e=>{const v=e.target.value.trim();if(!v)return;menuState[di]={...MenuInfer.analyzeDish(v),ocr:d.ocr,off:{}};const it=IM.findByName(master,'menu',v);if(it){IM.touch(master,it.id);IM.save(localStorage,master);}syncDishInput();clearTimeout(menuTimer);menuTimer=setTimeout(()=>{refreshDatalists();renderMenu();},400);}}});
     inp.setAttribute('list','dl-menu');
-    const reg=el('button',{className:'btn pri',textContent:'登録',on:{click:()=>{const v=inp.value.trim();if(!v)return;IM.registerCorrection(master,'menu',d.ocr,v);saveMaster();menuState[di]={...MenuInfer.analyzeDish(v),ocr:d.ocr,off:{}};clearTimeout(menuTimer);$('status').textContent=`登録しました：「${d.ocr}」→「${v}」`;syncDishInput();renderMenu();}}});
+    const reg=el('button',{className:'btn pri',textContent:'仮登録',on:{click:()=>{const v=inp.value.trim();if(!v)return;prov=IM.loadProv(localStorage);IM.addProvisional(prov,{mode:'menu',ocr:d.ocr||v,name:v});saveProv();menuState[di]={...MenuInfer.analyzeDish(v),ocr:d.ocr,off:{}};clearTimeout(menuTimer);$('status').textContent=`仮登録しました：「${d.ocr}」→「${v}」（④品目登録で確定してください）`;syncDishInput();renderMenu();}}});
     const div=el('div',{style:'margin:10px 0;border-top:1px solid #eee;padding-top:6px'},[
       el('div',{className:'row'},[inp,reg]),
-      el('div',{className:'muted'},[d.ocr&&IM.norm(d.ocr)!==IM.norm(d.dish)?`OCR：${d.ocr} `:'',d.matched?'辞書:'+d.matched:'辞書なし（名前から推定）',el('span',{className:'badge '+cls,textContent:txt})])]);
+      el('div',{className:'muted'},[d.ocr&&IM.norm(d.ocr)!==IM.norm(d.dish)?`OCR：${d.ocr} `:'',d.matched?'辞書:'+d.matched:'辞書なし（名前から推定）',el('span',{className:'badge '+cls,textContent:txt}),suggBtn(d.ocr||d.dish,d.dish,'menu',v=>{menuState[di]={...MenuInfer.analyzeDish(v),ocr:d.ocr,off:{}};syncDishInput();renderMenu();})])]);
     [['fromName','name'],['typical',''],['optional','opt']].forEach(([k,c])=>d[k].forEach(x=>{const off=d.off[x]??(k==='optional');const b=el('button',{className:'chip '+c,textContent:x,on:{click:()=>{d.off[x]=!off;renderMenu();}}});b.style.textDecoration=off?'line-through':'';b.style.opacity=off?.4:1;div.append(b);if(!off)all.add(x);}));
     box.append(div);});
   $('ingSum').value=[...all].join('、');
@@ -302,6 +322,57 @@ function csvText(){
 }
 $('csv').onclick=()=>download('修理伺い_'+new Date().toISOString().slice(0,10)+'.csv',csvText(),'text/csv');
 
+// ---- 仮登録リスト ----
+function leftText(ms){if(ms<=0)return'まもなく消えます';const h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000);return `あと${h?h+'時間':''}${m}分`;}
+function renderProvList(box,withCheck){
+  box.innerHTML='';
+  if(!prov.length){box.append(el('div',{className:'muted',textContent:'仮登録はありません'}));return;}
+  [...prov].sort((a,b)=>b.createdAt-a.createdAt).forEach(e=>{
+    const nm=el('input',{value:e.name,on:{input:ev=>e.name=ev.target.value,change:()=>IM.saveProv(localStorage,prov)}});nm.setAttribute('list','dl-'+e.mode);
+    const pr=el('input',{className:'price',value:e.price??'',placeholder:'円',inputmode:'numeric',on:{input:ev=>e.price=parseInt(ev.target.value.replace(/\D/g,''))||null,change:()=>IM.saveProv(localStorage,prov)}});
+    if(e.mode==='menu')pr.style.display='none';
+    const ok=el('button',{className:'btn pri',textContent:'確定',on:{click:()=>confirmProv([e.id])}});
+    const ng=el('button',{className:'btn del',textContent:'破棄',on:{click:()=>discardProv([e.id])}});
+    const cb=withCheck?el('input',{type:'checkbox',className:'provSel',checked:provSel.has(e.id),on:{change:ev=>ev.target.checked?provSel.add(e.id):provSel.delete(e.id)}}):null;
+    box.append(el('div',{className:'prov'},[el('div',{className:'row'},[cb,nm,pr,ok,ng]),
+      el('div',{className:'muted'},[`${e.mode==='menu'?'献立':'レシート'}／OCR：${e.ocr||'（なし）'}／`,el('b',{className:'left',textContent:leftText(IM.remainingMs(e))})])]));
+  });
+}
+function renderProvAll(){
+  const n=prov.length;$('provBadge').textContent=n;$('provBadge').style.display=n?'':'none';
+  $('provCount').textContent=n?`${n}件`:'';$('provScanCard').style.display=n?'':'none';
+  renderProvList($('provListScan'),false);renderProvList($('provListItems'),true);
+  $('provAll').checked=n>0&&prov.every(e=>provSel.has(e.id));
+}
+function confirmProv(ids){
+  const edits=Object.fromEntries(prov.map(e=>[e.id,{name:e.name,price:e.price}]));prov=IM.loadProv(localStorage);prov.forEach(e=>{if(edits[e.id])Object.assign(e,edits[e.id]);});master=IM.load(localStorage);let n=0;
+  ids.forEach(id=>{const e=prov.find(x=>x.id===id);if(!e)return;if(!e.name.trim())return;if(IM.confirmProvisional(master,prov,id,{name:e.name.trim(),price:e.price}))n++;provSel.delete(id);});
+  // keep on-screen edits (name/price) that were typed but not yet saved
+  saveMaster();saveProv();$('status').textContent=`確定しました（${n}件）`;
+  if($('resultReceipt').style.display!=='none')renderLines();if($('resultMenu').style.display!=='none')renderMenu();
+  if($('items').classList.contains('on'))renderItems();
+}
+function discardProv(ids,ask=true){
+  if(ask&&!confirm(`${ids.length}件の仮登録を破棄しますか？`))return;
+  prov=IM.loadProv(localStorage);ids.forEach(id=>{IM.discardProvisional(prov,id);provSel.delete(id);});saveProv();
+  if($('resultReceipt').style.display!=='none')renderLines();if($('resultMenu').style.display!=='none')renderMenu();
+}
+$('provAll').onchange=ev=>{prov.forEach(e=>ev.target.checked?provSel.add(e.id):provSel.delete(e.id));renderProvAll();};
+$('provOkSel').onclick=()=>{const ids=[...provSel].filter(id=>prov.some(e=>e.id===id));if(!ids.length)return alert('選んでください');confirmProv(ids);};
+$('provDelSel').onclick=()=>{const ids=[...provSel].filter(id=>prov.some(e=>e.id===id));if(!ids.length)return alert('選んでください');discardProv(ids);};
+// 24時間で期限切れ：読み込み時と、開いている間は30秒ごとに掃除・残り時間を更新
+function provTick(){
+  const cur=IM.loadProv(localStorage);const removed=IM.purgeExpired(cur);
+  // keep unsaved on-screen edits for entries that still exist
+  prov=cur.map(e=>({...e,...(prov.find(x=>x.id===e.id)||{}),createdAt:e.createdAt}));
+  if(removed)IM.saveProv(localStorage,prov);
+  const focused=document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.prov');
+  if(removed||!focused)renderProvAll();
+  return removed;
+}
+window.provTick=provTick;
+setInterval(provTick,30000);
+
 // ---- ④ 品目登録 ----
 const imMode=()=>$('imMode').value;
 const selected=new Set();
@@ -347,4 +418,5 @@ $('imImport').onchange=async e=>{const f=e.target.files[0];if(!f)return;const ho
   }catch(err){$('imMsg').textContent='読み込めませんでした：'+err.message;}e.target.value='';};
 $('fDate').value=new Date().toISOString().slice(0,10);
 refreshDatalists();
+provTick();renderProvAll();
 </script></main></body></html>
