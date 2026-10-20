@@ -42,10 +42,25 @@ pre{white-space:pre-wrap;font-size:13px;background:#f7f7f7;padding:8px;border-ra
 .alias{display:inline-block;background:#edf2f7;border-radius:12px;padding:3px 4px 3px 10px;margin:3px;font-size:13px}
 .alias button{border:0;background:#fed7d7;border-radius:10px;margin-left:4px;padding:2px 7px}
 progress{width:100%}
+.picks{margin-top:4px}.picks .chip{padding:4px 9px;font-size:13px}
+.tblwrap{overflow-x:auto;margin-top:6px}
+.tbl{border-collapse:collapse;width:100%;font-size:13px;min-width:520px}
+.tbl th,.tbl td{border:1px solid #cbd5e0;padding:5px 6px;text-align:left;vertical-align:top}
+.tbl th{background:#edf2f7;white-space:nowrap}.tbl td.num{text-align:right;white-space:nowrap}.tbl td.nowrap{white-space:nowrap}
+.tbl .x{background:#fed7d7;border:0;border-radius:6px;padding:4px 8px}
+.fitem{display:flex;gap:6px;align-items:center;margin:4px 0}.fitem .price{flex:0 0 90px}
+.print-only{display:none}
+@page{margin:12mm}
+@media print{
+ body{background:#fff}header,.tabs,.no-print,section:not(#form){display:none!important}
+ section#form{display:block!important;padding:0}main{max-width:none}
+ #printArea{box-shadow:none;padding:0}.print-only{display:block;font-size:16px;margin:0 0 8px}
+ .tblwrap{overflow:visible}.tbl{min-width:0;font-size:11pt}.tbl .del-col{display:none}
+}
 video{width:100%;border-radius:6px;display:none}
 </style></head><body><main>
 <header>レシート読み取り・購入伺い（試作）</header>
-<div class="tabs"><button data-t="scan" class="on">① 読取</button><button data-t="form">② 購入伺い</button><button data-t="list">③ 一覧・Excel表</button><button data-t="items">④ 品目登録<span id="provBadge" class="cnt" style="display:none"></span></button></div>
+<div class="tabs"><button data-t="scan" class="on">① 読取</button><button data-t="form">② 購入伺い</button><button data-t="items">③ 品目登録<span id="provBadge" class="cnt" style="display:none"></span></button></div>
 
 <section id="scan" class="on">
  <div class="card">
@@ -71,7 +86,7 @@ video{width:100%;border-radius:6px;display:none}
   <b>金額の候補</b> <span class="muted">（タップで選ぶ。緑が第一候補）</span>
   <div id="amounts"></div>
   <div class="row"><div><label>日付</label><input id="rDate"></div><div><label>店名</label><input id="rStore"></div></div>
-  <div style="margin-top:12px"><b>品目（明細）</b> <span class="muted">名前を直して「仮登録」→ ④で「確定」すると、次から自動で直ります。チェックした行を購入伺いに入れます。</span></div>
+  <div style="margin-top:12px"><b>品目（明細）</b> <span class="muted">名前を直して「仮登録」→ ③で「確定」すると、次から自動で直ります。チェックした行を購入伺いに入れます。</span></div>
   <div id="lineItems"></div>
   <button id="addLine" class="btn" style="margin-top:6px">＋ 行を追加</button>
   <button id="toForm" class="big">この内容で購入伺いへ →</button>
@@ -92,22 +107,30 @@ video{width:100%;border-radius:6px;display:none}
 </section>
 
 <section id="form">
- <div class="card">
-  <label>件名（購入内容）</label><input id="fTitle" placeholder="例：2階トイレ 手すりのネジ交換">
-  <div class="row"><div><label>日付</label><input id="fDate" type="date"></div><div><label>金額（円）</label><input id="fAmount" inputmode="numeric"></div></div>
-  <label>店名</label><input id="fStore">
-  <label>品目</label><div id="fItems" class="muted">（なし）</div>
+ <div class="card no-print">
+  <b>購入伺いを書く</b>
+  <label>名前（買うもの・件名）</label><input id="fTitle" list="dl-receipt" placeholder="例：なべネジ M4×20" autocomplete="off">
+  <div id="fPicks" class="picks"></div>
+  <div class="row"><div><label>金額（円）</label><input id="fAmount" inputmode="numeric"></div><div><label>日付</label><input id="fDate" type="date"></div></div>
+  <label>店名（任意）</label><input id="fStore">
   <label>メモ</label><textarea id="fMemo" rows="2"></textarea>
-  <label>レシート</label><img id="fThumb" class="prev" style="max-height:160px">
+  <label>品目 <span class="muted">（①で選んだ明細。名前をタップすると登録済みの品目から選べます）</span></label>
+  <div id="fItems"></div>
+  <button id="fAddItem" class="btn" style="margin-top:6px">＋ 品目を追加</button>
   <button id="save" class="big">保存</button>
   <div class="muted" id="saveNote">保存先はこの端末のこのブラウザ内（localStorage）だけです。</div>
+  <div id="saveMsg" class="muted"></div>
  </div>
-</section>
-
-<section id="list">
- <div class="card"><div id="entries"></div><div id="total" style="margin-top:8px;font-weight:bold"></div>
- <button id="csv" class="big">Excel表（CSV）にして保存</button>
- <div class="muted">Excelで開くと、そのまま表として印刷できます（印刷はExcel側で行います）。</div></div>
+ <div class="card" id="printArea">
+  <h2 class="print-only" id="printTitle">購入伺い 一覧</h2>
+  <b class="no-print">保存した購入伺い</b> <span class="muted no-print">（Excel表と同じ内容です）</span>
+  <div class="tblwrap"><table id="entries" class="tbl"></table></div>
+  <div id="total" style="margin-top:8px;font-weight:bold"></div>
+  <div class="no-print">
+   <div class="row" style="margin-top:8px"><button id="csv" class="big">Excel表（CSV）にして保存</button><button id="printBtn" class="big sub">印刷する</button></div>
+   <div class="muted">Excelで開くか、「印刷する」でこの表をそのまま紙にできます。</div>
+  </div>
+ </div>
 </section>
 
 <section id="items">
@@ -159,7 +182,7 @@ const yen=v=>v==null||v===''||isNaN(v)?'':'¥'+Number(v).toLocaleString();
 const fmtDate=t=>t?new Date(t).toLocaleDateString('ja-JP'):'なし';
 let thumb='', lastImg=null, worker=null, rawText='', lastApplied=[], lineRows=[], pendingItems=[];
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>show(b.dataset.t));
-function show(t){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===t));if(t==='list')renderList();if(t==='items')renderItems();if(t==='form')renderFormItems();}
+function show(t){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.t===t));document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===t));if(t==='items')renderItems();if(t==='form'){renderFormItems();renderPicks2();renderList();}}
 function refreshDatalists(){for(const mode of ['receipt','menu']){const dl=$('dl-'+mode);dl.innerHTML='';master.items.filter(i=>i.mode===mode).sort((a,b)=>IM.lastActivity(b)-IM.lastActivity(a)).forEach(i=>dl.append(el('option',{value:i.name})));}}
 
 async function getWorker(){
@@ -238,10 +261,10 @@ function renderLines(){
     const name=el('input',{value:row.name,placeholder:'品目名',on:{input:e=>{row.name=e.target.value;row.fixed=false;},change:e=>{const it=IM.findByName(master,'receipt',e.target.value);if(it){if(!row.price&&it.price){row.price=it.price;price.value=it.price;}IM.touch(master,it.id);saveMaster();}const[c2,t2]=rowStatus(row,'receipt');badge.className='badge '+c2;badge.textContent=t2;}}});
     name.setAttribute('list','dl-receipt');
     const price=el('input',{className:'price',value:row.price??'',inputmode:'numeric',placeholder:'円',on:{input:e=>row.price=parseInt(e.target.value.replace(/\D/g,''))||null}});
-    const reg=el('button',{className:'btn pri',textContent:'仮登録',title:'この修正を仮登録（④で確定）',on:{click:()=>{
+    const reg=el('button',{className:'btn pri',textContent:'仮登録',title:'この修正を仮登録（③で確定）',on:{click:()=>{
       if(!row.name.trim())return alert('品目名を入れてください');
       prov=IM.loadProv(localStorage);IM.addProvisional(prov,{mode:'receipt',ocr:row.ocr||row.name,name:row.name,price:row.price});saveProv();
-      $('status').textContent=`仮登録しました：「${row.ocr||row.name}」→「${row.name.trim()}」（④品目登録で確定してください）`;renderLines();}}});
+      $('status').textContent=`仮登録しました：「${row.ocr||row.name}」→「${row.name.trim()}」（③品目登録で確定してください）`;renderLines();}}});
     const del=el('button',{className:'btn del',textContent:'×',title:'この行を消す',on:{click:()=>{lineRows.splice(i,1);renderLines();}}});
     box.append(el('div',{className:'li'},[
       el('div',{className:'row'},[el('input',{type:'checkbox',checked:row.use,title:'購入伺いに入れる',on:{change:e=>row.use=e.target.checked}}),name,price,reg,del]),
@@ -273,7 +296,7 @@ function renderMenu(){
     const[cls,txt]=rowStatus({name:d.dish,fixed:d.fixed},'menu');
     const inp=el('input',{value:d.dish,on:{change:e=>{const v=e.target.value.trim();if(!v)return;menuState[di]={...MenuInfer.analyzeDish(v),ocr:d.ocr,off:{}};const it=IM.findByName(master,'menu',v);if(it){IM.touch(master,it.id);IM.save(localStorage,master);}syncDishInput();clearTimeout(menuTimer);menuTimer=setTimeout(()=>{refreshDatalists();renderMenu();},400);}}});
     inp.setAttribute('list','dl-menu');
-    const reg=el('button',{className:'btn pri',textContent:'仮登録',on:{click:()=>{const v=inp.value.trim();if(!v)return;prov=IM.loadProv(localStorage);IM.addProvisional(prov,{mode:'menu',ocr:d.ocr||v,name:v});saveProv();menuState[di]={...MenuInfer.analyzeDish(v),ocr:d.ocr,off:{}};clearTimeout(menuTimer);$('status').textContent=`仮登録しました：「${d.ocr}」→「${v}」（④品目登録で確定してください）`;syncDishInput();renderMenu();}}});
+    const reg=el('button',{className:'btn pri',textContent:'仮登録',on:{click:()=>{const v=inp.value.trim();if(!v)return;prov=IM.loadProv(localStorage);IM.addProvisional(prov,{mode:'menu',ocr:d.ocr||v,name:v});saveProv();menuState[di]={...MenuInfer.analyzeDish(v),ocr:d.ocr,off:{}};clearTimeout(menuTimer);$('status').textContent=`仮登録しました：「${d.ocr}」→「${v}」（③品目登録で確定してください）`;syncDishInput();renderMenu();}}});
     const div=el('div',{style:'margin:10px 0;border-top:1px solid #eee;padding-top:6px'},[
       el('div',{className:'row'},[inp,reg]),
       el('div',{className:'muted'},[d.ocr&&IM.norm(d.ocr)!==IM.norm(d.dish)?`OCR：${d.ocr} `:'',d.matched?'辞書:'+d.matched:'辞書なし（名前から推定）',el('span',{className:'badge '+cls,textContent:txt}),suggBtn(d.ocr||d.dish,d.dish,'menu',v=>{menuState[di]={...MenuInfer.analyzeDish(v),ocr:d.ocr,off:{}};syncDishInput();renderMenu();})])]);
@@ -293,34 +316,64 @@ $('liveBtn').onclick=async()=>{
 };
 $('snapBtn').onclick=()=>{const v=$('video');const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);const img=new Image();img.onload=()=>runOCR(img);img.src=c.toDataURL('image/jpeg',0.92);v.srcObject.getTracks().forEach(t=>t.stop());v.style.display='none';$('snapBtn').style.display='none';};
 $('toForm').onclick=()=>{
-  $('fDate').value=$('rDate').value||$('fDate').value;$('fStore').value=$('rStore').value;$('fThumb').src=thumb;
+  $('fDate').value=$('rDate').value||$('fDate').value;$('fStore').value=$('rStore').value;
   pendingItems=lineRows.filter(r=>r.use&&r.name.trim()).map(r=>({name:r.name.trim(),price:r.price??null,ocr:r.ocr||''}));
   pendingItems.forEach(p=>{const it=IM.findByName(master,'receipt',p.name);if(it)IM.touch(master,it.id);});saveMaster();
   show('form');
 };
 const itemsText=items=>(items||[]).map(i=>i.name+(i.price!=null?' '+yen(i.price):'')).join('; ');
-function renderFormItems(){$('fItems').textContent=pendingItems.length?itemsText(pendingItems):'（なし）';}
+// 品目登録との連携：名前欄・品目行は登録済みの品目（最近使った順）から選べる
+function recentItems(n){return master.items.filter(i=>i.mode==='receipt').sort((a,b)=>IM.lastActivity(b)-IM.lastActivity(a)).slice(0,n);}
+function renderPicks2(){
+  master=IM.load(localStorage);const box=$('fPicks');box.innerHTML='';const its=recentItems(8);
+  if(!its.length)return;box.append(el('span',{className:'muted',textContent:'登録済み：'}));
+  its.forEach(it=>box.append(el('button',{className:'chip pick',textContent:it.name,on:{click:()=>{$('fTitle').value=it.name;if(!$('fAmount').value&&it.price)$('fAmount').value=it.price;IM.touch(master,it.id);saveMaster();renderPicks2();}}})));
+}
+$('fTitle').addEventListener('change',()=>{const it=IM.findByName(master,'receipt',$('fTitle').value);if(it){IM.touch(master,it.id);saveMaster();}});
+function renderFormItems(){
+  const box=$('fItems');box.innerHTML='';
+  if(!pendingItems.length)box.append(el('div',{className:'muted',textContent:'（なし）'}));
+  pendingItems.forEach((p,i)=>{
+    const nm=el('input',{value:p.name,placeholder:'品目名',autocomplete:'off',on:{input:e=>p.name=e.target.value,change:e=>{const it=IM.findByName(master,'receipt',e.target.value);if(it){if(p.price==null&&it.price){p.price=it.price;pr.value=it.price;}IM.touch(master,it.id);saveMaster();}}}});
+    nm.setAttribute('list','dl-receipt');
+    const pr=el('input',{className:'price',value:p.price??'',placeholder:'円',inputmode:'numeric',on:{input:e=>p.price=parseInt(e.target.value.replace(/\D/g,''))||null}});
+    box.append(el('div',{className:'fitem'},[nm,pr,el('button',{className:'btn del',textContent:'×',on:{click:()=>{pendingItems.splice(i,1);renderFormItems();}}})]));
+  });
+}
+$('fAddItem').onclick=()=>{pendingItems.push({name:'',price:null,ocr:''});renderFormItems();};
 const load=()=>JSON.parse(localStorage.getItem('shuriEntries')||'[]');
 $('save').onclick=()=>{
-  const e={id:Date.now(),title:$('fTitle').value.trim(),date:$('fDate').value,store:$('fStore').value.trim(),amount:parseInt(String($('fAmount').value).replace(/[^\d]/g,''))||0,memo:$('fMemo').value.trim(),thumb:$('fThumb').getAttribute('src')||'',items:pendingItems.slice(),created:new Date().toISOString()};
-  if(!e.title){alert('件名を入れてください');return;}
-  const l=load();l.unshift(e);try{localStorage.setItem('shuriEntries',JSON.stringify(l));}catch(err){e.thumb='';l[0]=e;localStorage.setItem('shuriEntries',JSON.stringify(l));alert('容量不足のため画像なしで保存しました');}
-  ['fTitle','fMemo','fAmount','fStore'].forEach(i=>$(i).value='');$('fThumb').removeAttribute('src');pendingItems=[];show('list');
+  const items=pendingItems.filter(p=>p.name.trim()).map(p=>({name:p.name.trim(),price:p.price??null,ocr:p.ocr||''}));
+  // 保存データの項目名（title など）は互換のためそのまま
+  const e={id:Date.now(),title:$('fTitle').value.trim(),date:$('fDate').value,store:$('fStore').value.trim(),amount:parseInt(String($('fAmount').value).replace(/[^\d]/g,''))||0,memo:$('fMemo').value.trim(),items,created:new Date().toISOString()};
+  if(!e.title){alert('名前を入れてください');return;}
+  const l=load();l.unshift(e);localStorage.setItem('shuriEntries',JSON.stringify(l));
+  items.forEach(p=>{const it=IM.findByName(master,'receipt',p.name);if(it)IM.touch(master,it.id);});saveMaster();
+  ['fTitle','fMemo','fAmount','fStore'].forEach(i=>$(i).value='');pendingItems=[];renderFormItems();renderPicks2();renderList();
+  $('saveMsg').textContent=`保存しました：${e.title}`;
 };
+// 旧データ（件名・店名・登録日時・画像など）もそのまま新しい列に当てはめる
+const CSV_COLS=['日付','名前','金額','店名','メモ','品目'];
+const entryRow=e=>[e.date||'',e.title||'',e.amount||0,e.store||'',e.memo||'',itemsText(e.items)];
 function renderList(){
-  const l=load();$('entries').innerHTML=l.length?'':'<div class="muted">まだありません</div>';
-  l.forEach(e=>{const info=el('div',{style:'flex:1'},[el('b',{textContent:e.title}),el('br'),el('span',{className:'muted',textContent:`${e.date} ${e.store} ${e.memo}`})]);
-    if(e.items&&e.items.length)info.append(el('div',{className:'muted',textContent:'品目：'+itemsText(e.items)}));
-    const d=el('div',{className:'entry'},[e.thumb?el('img',{src:e.thumb}):null,info,el('div',{textContent:yen(e.amount||0)})]);
-    d.append(el('button',{className:'x',textContent:'削除',on:{click:()=>{if(confirm('削除しますか？')){localStorage.setItem('shuriEntries',JSON.stringify(load().filter(y=>y.id!==e.id)));renderList();}}}}));$('entries').append(d);});
-  $('total').textContent=l.length?`合計 ${yen(l.reduce((s,e)=>s+(e.amount||0),0))}（${l.length}件）`:'';
+  const l=load();const t=$('entries');t.innerHTML='';
+  $('printTitle').textContent=`購入伺い 一覧（${new Date().toLocaleDateString('ja-JP')}）`;
+  if(!l.length){t.append(el('tbody',{},el('tr',{},el('td',{className:'muted',textContent:'まだありません'}))));$('total').textContent='';return;}
+  t.append(el('thead',{},el('tr',{},[...CSV_COLS.map(c=>el('th',{textContent:c})),el('th',{className:'del-col',textContent:''})])));
+  const tb=el('tbody');
+  l.forEach(e=>{const r=entryRow(e);
+    tb.append(el('tr',{},[el('td',{className:'nowrap',textContent:r[0]}),el('td',{textContent:r[1]}),el('td',{className:'num',textContent:yen(r[2])}),el('td',{textContent:r[3]}),el('td',{textContent:r[4]}),el('td',{textContent:r[5]}),
+      el('td',{className:'del-col'},el('button',{className:'x',textContent:'削除',on:{click:()=>{if(confirm(`「${e.title}」を削除しますか？`)){localStorage.setItem('shuriEntries',JSON.stringify(load().filter(y=>y.id!==e.id)));renderList();}}}}))]));});
+  t.append(tb);
+  $('total').textContent=`合計 ${yen(l.reduce((s,e)=>s+(e.amount||0),0))}（${l.length}件）`;
 }
 function download(name,content,type){const a=el('a',{href:URL.createObjectURL(new Blob([content],{type})),download:name});document.body.append(a);a.click();a.remove();}
 function csvText(){
   const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
-  const rows=[['日付','件名（購入内容）','店名','金額','メモ','登録日時','品目']].concat(load().map(e=>[e.date,e.title,e.store,e.amount,e.memo,e.created,itemsText(e.items)]));
+  const rows=[CSV_COLS].concat(load().map(entryRow));
   return '\uFEFF'+rows.map(r=>r.map(q).join(',')).join('\r\n');
 }
+$('printBtn').onclick=()=>{renderList();window.print();};
 $('csv').onclick=()=>download('購入伺い_'+new Date().toISOString().slice(0,10)+'.csv',csvText(),'text/csv');
 
 // ---- 仮登録リスト ----
@@ -374,7 +427,7 @@ function provTick(){
 window.provTick=provTick;
 setInterval(provTick,30000);
 
-// ---- ④ 品目登録 ----
+// ---- ③ 品目登録 ----
 const imMode=()=>$('imMode').value;
 const selected=new Set();
 $('imMode').onchange=()=>{selected.clear();renderItems();};$('imSearch').oninput=()=>renderItems();
