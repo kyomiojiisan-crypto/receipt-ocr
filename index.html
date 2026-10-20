@@ -2,7 +2,7 @@
 <html lang="ja"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:,">
-<title>レシート読み取り・修理伺い（試作）</title>
+<title>レシート読み取り・購入伺い（試作）</title>
 <style>
 body{font-family:-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;margin:0;background:#f4f5f7;color:#222}
 main{max-width:760px;margin:0 auto}
@@ -44,8 +44,8 @@ pre{white-space:pre-wrap;font-size:13px;background:#f7f7f7;padding:8px;border-ra
 progress{width:100%}
 video{width:100%;border-radius:6px;display:none}
 </style></head><body><main>
-<header>レシート読み取り・修理伺い（試作）</header>
-<div class="tabs"><button data-t="scan" class="on">① 読取</button><button data-t="form">② 修理伺い</button><button data-t="list">③ 一覧</button><button data-t="items">④ 品目登録<span id="provBadge" class="cnt" style="display:none"></span></button></div>
+<header>レシート読み取り・購入伺い（試作）</header>
+<div class="tabs"><button data-t="scan" class="on">① 読取</button><button data-t="form">② 購入伺い</button><button data-t="list">③ 一覧・Excel表</button><button data-t="items">④ 品目登録<span id="provBadge" class="cnt" style="display:none"></span></button></div>
 
 <section id="scan" class="on">
  <div class="card">
@@ -71,10 +71,10 @@ video{width:100%;border-radius:6px;display:none}
   <b>金額の候補</b> <span class="muted">（タップで選ぶ。緑が第一候補）</span>
   <div id="amounts"></div>
   <div class="row"><div><label>日付</label><input id="rDate"></div><div><label>店名</label><input id="rStore"></div></div>
-  <div style="margin-top:12px"><b>品目（明細）</b> <span class="muted">名前を直して「仮登録」→ ④で「確定」すると、次から自動で直ります。チェックした行を修理伺いに入れます。</span></div>
+  <div style="margin-top:12px"><b>品目（明細）</b> <span class="muted">名前を直して「仮登録」→ ④で「確定」すると、次から自動で直ります。チェックした行を購入伺いに入れます。</span></div>
   <div id="lineItems"></div>
   <button id="addLine" class="btn" style="margin-top:6px">＋ 行を追加</button>
-  <button id="toForm" class="big">この内容で修理伺いへ →</button>
+  <button id="toForm" class="big">この内容で購入伺いへ →</button>
  </div>
  <div class="card" id="resultMenu" style="display:none">
   <b>料理と材料</b>
@@ -93,7 +93,7 @@ video{width:100%;border-radius:6px;display:none}
 
 <section id="form">
  <div class="card">
-  <label>件名（修理内容）</label><input id="fTitle" placeholder="例：2階トイレ 手すりのネジ交換">
+  <label>件名（購入内容）</label><input id="fTitle" placeholder="例：2階トイレ 手すりのネジ交換">
   <div class="row"><div><label>日付</label><input id="fDate" type="date"></div><div><label>金額（円）</label><input id="fAmount" inputmode="numeric"></div></div>
   <label>店名</label><input id="fStore">
   <label>品目</label><div id="fItems" class="muted">（なし）</div>
@@ -106,7 +106,8 @@ video{width:100%;border-radius:6px;display:none}
 
 <section id="list">
  <div class="card"><div id="entries"></div><div id="total" style="margin-top:8px;font-weight:bold"></div>
- <button id="csv" class="big">CSVで書き出す（Excel用）</button></div>
+ <button id="csv" class="big">Excel表（CSV）にして保存</button>
+ <div class="muted">Excelで開くと、そのまま表として印刷できます（印刷はExcel側で行います）。</div></div>
 </section>
 
 <section id="items">
@@ -243,7 +244,7 @@ function renderLines(){
       $('status').textContent=`仮登録しました：「${row.ocr||row.name}」→「${row.name.trim()}」（④品目登録で確定してください）`;renderLines();}}});
     const del=el('button',{className:'btn del',textContent:'×',title:'この行を消す',on:{click:()=>{lineRows.splice(i,1);renderLines();}}});
     box.append(el('div',{className:'li'},[
-      el('div',{className:'row'},[el('input',{type:'checkbox',checked:row.use,title:'修理伺いに入れる',on:{change:e=>row.use=e.target.checked}}),name,price,reg,del]),
+      el('div',{className:'row'},[el('input',{type:'checkbox',checked:row.use,title:'購入伺いに入れる',on:{change:e=>row.use=e.target.checked}}),name,price,reg,del]),
       el('div',{className:'muted'},[row.ocr&&row.ocr!==row.name?`OCR：${row.ocr}`:'',badge,suggBtn(row.ocr||row.name,row.name,'receipt',v=>{row.name=v;const e=prov.find(x=>x.mode==='receipt'&&x.name===v);if(e&&!row.price&&e.price)row.price=e.price;renderLines();})])]));
   });
 }
@@ -317,10 +318,10 @@ function renderList(){
 function download(name,content,type){const a=el('a',{href:URL.createObjectURL(new Blob([content],{type})),download:name});document.body.append(a);a.click();a.remove();}
 function csvText(){
   const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
-  const rows=[['日付','件名（修理内容）','店名','金額','メモ','登録日時','品目']].concat(load().map(e=>[e.date,e.title,e.store,e.amount,e.memo,e.created,itemsText(e.items)]));
+  const rows=[['日付','件名（購入内容）','店名','金額','メモ','登録日時','品目']].concat(load().map(e=>[e.date,e.title,e.store,e.amount,e.memo,e.created,itemsText(e.items)]));
   return '\uFEFF'+rows.map(r=>r.map(q).join(',')).join('\r\n');
 }
-$('csv').onclick=()=>download('修理伺い_'+new Date().toISOString().slice(0,10)+'.csv',csvText(),'text/csv');
+$('csv').onclick=()=>download('購入伺い_'+new Date().toISOString().slice(0,10)+'.csv',csvText(),'text/csv');
 
 // ---- 仮登録リスト ----
 function leftText(ms){if(ms<=0)return'まもなく消えます';const h=Math.floor(ms/3600000),m=Math.floor(ms%3600000/60000);return `あと${h?h+'時間':''}${m}分`;}
